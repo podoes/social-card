@@ -1,0 +1,83 @@
+name: podoes social card
+description: Draws a branded 1280x640 card for the repository, with live stats, and commits it when it changes.
+branding:
+  icon: image
+  color: orange
+
+inputs:
+  output:
+    description: Where to write the PNG, relative to the repository root.
+    default: .github/social-card.png
+  stats:
+    description: Set to false for the static version without numbers.
+    default: "true"
+  title:
+    description: Text to show in place of the repository name.
+    default: ""
+  description:
+    description: Text to show in place of the repository description.
+    default: ""
+  commit:
+    description: Commit and push the card when it has changed.
+    default: "true"
+  commit-message:
+    description: Message for that commit.
+    default: "chore: update social card"
+
+outputs:
+  changed:
+    description: "true when the card is different from the one already in the repository."
+    value: ${{ steps.diff.outputs.changed }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install tools
+      shell: bash
+      run: |
+        if ! command -v rsvg-convert >/dev/null; then
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq librsvg2-bin
+        fi
+        python3 -m venv "$RUNNER_TEMP/social-card-venv"
+        "$RUNNER_TEMP/social-card-venv/bin/pip" install --quiet "fonttools==4.55.0"
+
+    - name: Draw the card
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        CARD_OUTPUT: ${{ inputs.output }}
+        CARD_STATS: ${{ inputs.stats }}
+        CARD_TITLE: ${{ inputs.title }}
+        CARD_DESCRIPTION: ${{ inputs.description }}
+      run: |
+        args=(--out "$CARD_OUTPUT")
+        if [ "$CARD_STATS" = "false" ]; then args+=(--no-stats); fi
+        if [ -n "$CARD_TITLE" ]; then args+=(--title "$CARD_TITLE"); fi
+        if [ -n "$CARD_DESCRIPTION" ]; then args+=(--description "$CARD_DESCRIPTION"); fi
+        "$RUNNER_TEMP/social-card-venv/bin/python" "$GITHUB_ACTION_PATH/generate.py" "${args[@]}"
+
+    - name: Check for changes
+      id: diff
+      shell: bash
+      env:
+        CARD_OUTPUT: ${{ inputs.output }}
+      run: |
+        git add -- "$CARD_OUTPUT"
+        if git diff --cached --quiet -- "$CARD_OUTPUT"; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Commit the card
+      if: inputs.commit == 'true' && steps.diff.outputs.changed == 'true'
+      shell: bash
+      env:
+        CARD_OUTPUT: ${{ inputs.output }}
+        CARD_MESSAGE: ${{ inputs.commit-message }}
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git commit -m "$CARD_MESSAGE" -- "$CARD_OUTPUT"
+        git push

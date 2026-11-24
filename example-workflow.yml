@@ -1,0 +1,25 @@
+# Copy this file to .github/workflows/social-card.yml in each repository.
+name: Social card
+
+on:
+  schedule:
+    - cron: "23 4 * * 1" # every Monday, early morning UTC
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: social-card
+  cancel-in-progress: true
+
+jobs:
+  card:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: podoes/social-card@v1
+        with:
+          output: .github/social-card.png
